@@ -5,6 +5,7 @@ TagManager:
   serializedVersion: 2
   tags:
   - Enemy
+  - Ground
   layers:
   - Default
   - TransparentFX
@@ -21,9 +22,9 @@ TagManager:
   - Hazards
   - Bullets
   - Interactables
-  - 
-  - 
-  - 
+  - EnemyHead
+  - OneWayPlatform
+  - TrapBlock
   - 
   - 
   - 
@@ -65,4 +66,7 @@ TagManager:
     locked: 0
   - name: Player
     uniqueID: 3411891735
+    locked: 0
+  - name: OneWayPlatform
+    uniqueID: 2830127315
     locked: 0

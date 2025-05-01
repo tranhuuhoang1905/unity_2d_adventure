@@ -25,6 +25,7 @@ public class PlayerMovement : MonoBehaviour
     bool isJumpUp = false;
     bool isDoubleJumpUp = false;
     bool isFalling = true;
+    bool isWallJump = false;
     public GameObject dustBurstPrefab;
     public GameObject dustWallPrefab;
     ParticleSystem ps;
@@ -32,10 +33,17 @@ public class PlayerMovement : MonoBehaviour
 
     [SerializeField] float wallGravity = 0f;
     private bool isWallSliding = false;
+    private GameSession gameSession;
+    public bool isImmortal = false;
+    private SpriteRenderer spriteRenderer;
 
-
+    void Awake()
+    {
+        spriteRenderer = GetComponent<SpriteRenderer>();
+    }
     void Start()
     {
+        
         myRigidbody = GetComponent<Rigidbody2D>();
         myAnimator = GetComponent<Animator>();
         myBodyCollider = GetComponent<CapsuleCollider2D>();
@@ -44,6 +52,8 @@ public class PlayerMovement : MonoBehaviour
         
         ps = dustBurstPrefab.GetComponent<ParticleSystem>();
         psWall = dustWallPrefab.GetComponent<ParticleSystem>();
+        
+        gameSession = FindObjectOfType<GameSession>();
     }
 
     void Update()
@@ -53,7 +63,7 @@ public class PlayerMovement : MonoBehaviour
         Run();
         FlipSprite();
         // ClimbLadder();
-        Die();
+        // Die();
         AnimationAction();
     }
     void Drag()
@@ -117,32 +127,42 @@ public class PlayerMovement : MonoBehaviour
 
         if (value.isPressed && currentJumpCount < maxJumpCount)
         {
-            myRigidbody.velocity = new Vector2(myRigidbody.velocity.x, jumpSpeed); // không dùng +=
-            if (isWallSliding)
-            {
-                currentJumpCount = 1;
-            }
-            else
-            {
-                currentJumpCount++;
-            }
-            
-            Debug.Log($"check currentJumpCount:{currentJumpCount} ");
-            
-            if (currentJumpCount == 1)
-            {
-                isJumpUp = true;
-                isDoubleJumpUp = false;
-                myAnimator.SetBool("isJumpUp", true);
-            }
-            else
-            {
-                isDoubleJumpUp = true;
-                myAnimator.SetBool("isDoubleJumpUp", isDoubleJumpUp);
-            }
-
+            JumpAction();
             // CreateDustJump(); // gọi bụi nếu bạn có hiệu ứng
         }
+    }
+
+    void JumpAction()
+    {
+        myRigidbody.velocity = new Vector2(myRigidbody.velocity.x, jumpSpeed); // không dùng +=
+        if (isWallSliding)
+        {
+            currentJumpCount = 1;
+        }
+        else
+        {
+            currentJumpCount++;
+        }
+        
+        if (currentJumpCount == 1)
+        {
+            isJumpUp = true;
+            isDoubleJumpUp = false;
+            myAnimator.SetBool("isJumpUp", true);
+        }
+        else
+        {
+            isDoubleJumpUp = true;
+            myAnimator.SetBool("isDoubleJumpUp", isDoubleJumpUp);
+        }
+    }
+    public void KillEnemyJump()
+    {
+        currentJumpCount = 1;
+        myRigidbody.velocity = new Vector2(myRigidbody.velocity.x, jumpSpeed);
+        isJumpUp = true;
+        isDoubleJumpUp = false;
+        myAnimator.SetBool("isJumpUp", true);
     }
 
     void Run()
@@ -158,12 +178,13 @@ public class PlayerMovement : MonoBehaviour
         
         isFalling = CheckFalling();
 
+        isWallJump = CheckWallJump();
         if (playerIsTouchingGround && CheckIsGround())
         {
             currentJumpCount = 0;
         }
         
-        if (isFalling)
+        if (isFalling || isWallJump ||playerIsTouchingGround || CheckIsGround())
         {
             isJumpUp = false;
             isDoubleJumpUp = false;
@@ -173,18 +194,25 @@ public class PlayerMovement : MonoBehaviour
             || 
             (!playerIsTouchingGround && !isFalling)
         );
-
-        ParticalWallAction(!playerIsTouchingGround && isWallSliding);
+        ParticalWallAction(isWallJump);
+        myAnimator.SetBool("isWallJump", isWallJump);
 
         myAnimator.SetBool("isRunning", playerHasHorizontalSpeed);
         myAnimator.SetBool("isFalling", isFalling);
         myAnimator.SetBool("isJumpUp", isJumpUp);
         myAnimator.SetBool("isDoubleJumpUp", isDoubleJumpUp);
-        myAnimator.SetBool("isGround", playerIsTouchingGround);
+        myAnimator.SetBool("isGround", playerIsTouchingGround || CheckIsGround());
     }
     bool CheckFalling()
     {
-        return myRigidbody.velocity.y < -0.1f;
+        return myRigidbody.velocity.y < -0.1f && !CheckWallJump();
+    }
+
+    bool CheckWallJump()
+    {
+        
+        bool playerIsTouchingGround = CheckIsGround();
+        return !playerIsTouchingGround  && isWallSliding ;
     }
     bool CheckIsGround()
     {
@@ -219,15 +247,33 @@ public class PlayerMovement : MonoBehaviour
     //     myAnimator.SetBool("isClimbing", playerHasVerticalSpeed);
     // }
 
-    void Die()
+    void TakeLife()
     {
-        if (myBodyCollider.IsTouchingLayers(LayerMask.GetMask("Enemies", "Hazards")))
+        if (isImmortal) return;
+        StartCoroutine(IgnoreEnemyCollisionTemporarily());
+        if (gameSession)
         {
-            isAlive = false;
-            myAnimator.SetTrigger("Dying");
-            myRigidbody.velocity = deathKick;
-            FindObjectOfType<GameSession>().ProcessPlayerDeath();
+            
+            gameSession.ProcessPlayerDeath();
         }
+    }
+
+    IEnumerator IgnoreEnemyCollisionTemporarily()
+    {
+        int flashCount = 5;
+        float flashDuration = 0.1f;
+        isImmortal = true;
+        for (int i = 0; i < flashCount; i++)
+        {
+            spriteRenderer.color = Color.white; // Chớp trắng
+            yield return new WaitForSeconds(flashDuration);
+            spriteRenderer.color = Color.red; // Tùy – đỏ báo thương, hoặc Color.clear
+            yield return new WaitForSeconds(flashDuration);
+            spriteRenderer.color = Color.white;
+        }
+
+        spriteRenderer.color = Color.white; // Trả lại bình thường
+        isImmortal = false;
     }
 
     void OnTriggerEnter2D(Collider2D other)
@@ -239,6 +285,12 @@ public class PlayerMovement : MonoBehaviour
             currentJumpCount = 0;
             myRigidbody.gravityScale = wallGravity ;
         }
+
+        if (other.gameObject.layer == LayerMask.NameToLayer("Enemies"))
+        {
+            TakeLife();
+        }
+        
     }
 
     void OnTriggerExit2D(Collider2D other)
@@ -250,5 +302,57 @@ public class PlayerMovement : MonoBehaviour
             myRigidbody.gravityScale = gravityScaleAtStart;
         }
     }
+    
+    void OnCollisionEnter2D(Collision2D collision)
+    {
+        Debug.Log($"check collisionenter2d collision.gameObject.layer:{collision.gameObject.layer}");
+        if (collision.gameObject.layer == LayerMask.NameToLayer("Hazards"))
+        {
+            Debug.Log("va chạm trap");
+            TakeLife();
+        }
+    }
+
+
+    void OnCollisionStay2D(Collision2D collision)
+    {
+
+        
+        if (collision.gameObject.layer == LayerMask.NameToLayer("OneWayPlatform"))
+        {
+            Rigidbody2D rb = GetComponent<Rigidbody2D>();
+            foreach (ContactPoint2D contact in collision.contacts)
+            {
+                if (contact.normal.y > 0.9f && Mathf.Abs(rb.velocity.y) < 0.1f) 
+                {
+                    currentJumpCount = 0;
+                    return;
+                }
+            }
+        }
+
+        if (collision.gameObject.layer == LayerMask.NameToLayer("Enemies"))
+        {
+            Rigidbody2D rb = GetComponent<Rigidbody2D>();
+            foreach (ContactPoint2D contact in collision.contacts)
+            {
+                if (contact.normal.y > 0.9f && Mathf.Abs(rb.velocity.y) < 0.1f) 
+                {
+                    EnemyMovement enemyMovement = collision.transform.GetComponent<EnemyMovement>();
+                    if(enemyMovement != null)
+                    {
+                        KillEnemyJump();
+                        enemyMovement.EnemyDie();
+                    }
+                    return;
+                }
+            }
+        }
+
+
+    }
+    
+
+
 
 }
