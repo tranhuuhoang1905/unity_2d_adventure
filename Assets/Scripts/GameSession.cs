@@ -32,6 +32,10 @@ public class GameSession : MonoBehaviour
         scoreText.text = score.ToString();    
     }
 
+    public int GetPlayerLives()
+    {
+        return playerLives;
+    }
     public void ProcessPlayerDeath()
     {
         if (playerLives > 1)
@@ -40,7 +44,8 @@ public class GameSession : MonoBehaviour
         }
         else
         {
-            ResetGameSession();
+            StartCoroutine(ResetGameSession());
+            // ResetGameSession();
         }
     }
 
@@ -58,8 +63,9 @@ public class GameSession : MonoBehaviour
         livesText.text = playerLives.ToString();
     }
 
-    void ResetGameSession()
+    IEnumerator ResetGameSession()
     {
+        yield return new WaitForSeconds(1);
         FindObjectOfType<ScenePersist>().ResetScenePersist();
         SceneManager.LoadScene(0);
         Destroy(gameObject);

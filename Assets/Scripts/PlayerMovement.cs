@@ -7,7 +7,8 @@ public class PlayerMovement : MonoBehaviour
 {
     [SerializeField] float runSpeed = 10f;
     [SerializeField] float jumpSpeed = 5f;
-    [SerializeField] float climbSpeed = 5f;
+    [SerializeField] float jumpEnemyKillSpeed = 5f;
+
     [SerializeField] Vector2 deathKick = new Vector2 (10f, 10f);
     [SerializeField] GameObject bullet;
     [SerializeField] Transform gun;
@@ -36,6 +37,7 @@ public class PlayerMovement : MonoBehaviour
     private GameSession gameSession;
     public bool isImmortal = false;
     private SpriteRenderer spriteRenderer;
+    private Vector2 platformVelocity = Vector2.zero;
 
     void Awake()
     {
@@ -62,13 +64,11 @@ public class PlayerMovement : MonoBehaviour
         Drag();
         Run();
         FlipSprite();
-        // ClimbLadder();
-        // Die();
         AnimationAction();
     }
     void Drag()
     {
-        myRigidbody.drag = isWallSliding ? 4f : 0f;
+        myRigidbody.drag = isWallSliding ? 5f : 0f;
     }
 
     void ParticalGroundAction(bool active)
@@ -128,7 +128,6 @@ public class PlayerMovement : MonoBehaviour
         if (value.isPressed && currentJumpCount < maxJumpCount)
         {
             JumpAction();
-            // CreateDustJump(); // gọi bụi nếu bạn có hiệu ứng
         }
     }
 
@@ -156,7 +155,7 @@ public class PlayerMovement : MonoBehaviour
             myAnimator.SetBool("isDoubleJumpUp", isDoubleJumpUp);
         }
     }
-    public void KillEnemyJump()
+    public void AutoJump(float jumpSpeed)
     {
         currentJumpCount = 1;
         myRigidbody.velocity = new Vector2(myRigidbody.velocity.x, jumpSpeed);
@@ -168,12 +167,12 @@ public class PlayerMovement : MonoBehaviour
     void Run()
     {
         Vector2 playerVelocity = new Vector2 (moveInput.x * runSpeed, myRigidbody.velocity.y);
-        myRigidbody.velocity = playerVelocity;
+        myRigidbody.velocity = playerVelocity +  new Vector2(platformVelocity.x, 0f);;
     }
     
     void AnimationAction()
     {
-        bool playerHasHorizontalSpeed = Mathf.Abs(myRigidbody.velocity.x) > Mathf.Epsilon;
+        bool playerHasHorizontalSpeed = IsRuning();
         bool playerIsTouchingGround = myFeetCollider.IsTouchingLayers(LayerMask.GetMask("Ground"));
         
         isFalling = CheckFalling();
@@ -221,52 +220,48 @@ public class PlayerMovement : MonoBehaviour
 
     void FlipSprite()
     {
-        
-        bool playerHasHorizontalSpeed = Mathf.Abs(myRigidbody.velocity.x) > Mathf.Epsilon;
-
+        bool playerHasHorizontalSpeed = IsRuning();
         if (playerHasHorizontalSpeed)
         {
             transform.localScale = new Vector2 (Mathf.Sign(myRigidbody.velocity.x), 1f);
         }
     }
-
-    // void ClimbLadder()
-    // {
-    //     if (!myFeetCollider.IsTouchingLayers(LayerMask.GetMask("Climbing"))) 
-    //     { 
-    //         myRigidbody.gravityScale = gravityScaleAtStart;
-    //         myAnimator.SetBool("isClimbing", false);
-    //         return;
-    //     }
-        
-    //     Vector2 climbVelocity = new Vector2 (myRigidbody.velocity.x, moveInput.y * climbSpeed);
-    //     myRigidbody.velocity = climbVelocity;
-    //     myRigidbody.gravityScale = 0f;
-
-    //     bool playerHasVerticalSpeed = Mathf.Abs(myRigidbody.velocity.y) > Mathf.Epsilon;
-    //     myAnimator.SetBool("isClimbing", playerHasVerticalSpeed);
-    // }
+    bool IsRuning()
+    {
+        return Mathf.Abs(myRigidbody.velocity.x - platformVelocity.x) > Mathf.Epsilon;
+    }
 
     void TakeLife()
     {
         if (isImmortal) return;
-        StartCoroutine(IgnoreEnemyCollisionTemporarily());
+
         if (gameSession)
         {
-            
+            if (gameSession.GetPlayerLives() == 1){
+                isAlive = false;
+                myAnimator.SetTrigger("Dying");
+            }
+
             gameSession.ProcessPlayerDeath();
         }
+        
+        StartCoroutine(IgnoreEnemyCollisionTemporarily());
     }
 
     IEnumerator IgnoreEnemyCollisionTemporarily()
     {
         int flashCount = 5;
-        float flashDuration = 0.1f;
+        float flashDuration = 0.2f;
         isImmortal = true;
+        isAlive = false;
+        
+        myRigidbody.velocity = Vector2.zero;
         for (int i = 0; i < flashCount; i++)
         {
-            spriteRenderer.color = Color.white; // Chớp trắng
             yield return new WaitForSeconds(flashDuration);
+            if (i == 1 && gameSession.GetPlayerLives() > 0){
+                isAlive = true;
+            }
             spriteRenderer.color = Color.red; // Tùy – đỏ báo thương, hoặc Color.clear
             yield return new WaitForSeconds(flashDuration);
             spriteRenderer.color = Color.white;
@@ -280,44 +275,46 @@ public class PlayerMovement : MonoBehaviour
     {
         if (other.gameObject.layer == LayerMask.NameToLayer("Ground"))
         {
-            isWallSliding = true;
             myRigidbody.velocity = Vector2.zero;
             currentJumpCount = 0;
-            myRigidbody.gravityScale = wallGravity ;
         }
 
-        if (other.gameObject.layer == LayerMask.NameToLayer("Enemies"))
+        if (other.gameObject.layer == LayerMask.NameToLayer("Enemies") || other.gameObject.layer == LayerMask.NameToLayer("Hazards"))
         {
+            if (isImmortal) return;
             TakeLife();
         }
         
     }
 
-    void OnTriggerExit2D(Collider2D other)
+    public void UpdateWallSliding(bool status)
     {
-        if (other.gameObject.layer == LayerMask.NameToLayer("Ground"))
+        isWallSliding = status;
+        if(status)
         {
-            
-            isWallSliding = false;
+            myRigidbody.velocity = Vector2.zero;
+            currentJumpCount = 0;
+            myRigidbody.gravityScale = wallGravity ;
+        }
+        else
+        {
             myRigidbody.gravityScale = gravityScaleAtStart;
         }
     }
     
     void OnCollisionEnter2D(Collision2D collision)
     {
-        Debug.Log($"check collisionenter2d collision.gameObject.layer:{collision.gameObject.layer}");
         if (collision.gameObject.layer == LayerMask.NameToLayer("Hazards"))
         {
-            Debug.Log("va chạm trap");
+            if (isImmortal) return;
+            myRigidbody.velocity = Vector2.zero;
             TakeLife();
         }
     }
 
 
     void OnCollisionStay2D(Collision2D collision)
-    {
-
-        
+    {        
         if (collision.gameObject.layer == LayerMask.NameToLayer("OneWayPlatform"))
         {
             Rigidbody2D rb = GetComponent<Rigidbody2D>();
@@ -338,21 +335,21 @@ public class PlayerMovement : MonoBehaviour
             {
                 if (contact.normal.y > 0.9f && Mathf.Abs(rb.velocity.y) < 0.1f) 
                 {
-                    EnemyMovement enemyMovement = collision.transform.GetComponent<EnemyMovement>();
-                    if(enemyMovement != null)
+                    Enemy enemy = collision.transform.GetComponent<Enemy>();
+                    if(enemy != null)
                     {
-                        KillEnemyJump();
-                        enemyMovement.EnemyDie();
+                        AutoJump(jumpEnemyKillSpeed);
+                        enemy.EnemyDie();
                     }
                     return;
                 }
             }
         }
-
-
     }
-    
 
-
+    public void SetPlatformVelocity(Vector2 velocity)
+    {
+        platformVelocity = velocity;
+    }
 
 }
